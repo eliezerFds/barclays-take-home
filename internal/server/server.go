@@ -68,6 +68,10 @@ func New(deps Dependencies) *Server {
 
 	// Protected routes
 	huma.Get(api, "/v1/users/{userId}", s.FetchUser)
+	huma.Post(api, "/v1/accounts", s.CreateAccount, func(o *huma.Operation) {
+		o.DefaultStatus = http.StatusCreated
+	})
+	huma.Get(api, "/v1/accounts/{accountNumber}", s.FetchAccount)
 
 	s.routes = selectiveAuthMiddleware(router)
 

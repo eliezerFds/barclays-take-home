@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"math/rand"
 	"strings"
 	"time"
 
@@ -16,6 +17,9 @@ var (
 	ErrUserNotFound       = errors.New("user not found")
 	ErrFailedToCreateUser = errors.New("failed to create user")
 	ErrDuplicateUser      = errors.New("user already exists")
+
+	ErrAccountNotFound       = errors.New("account not found")
+	ErrFailedToCreateAccount = errors.New("failed to create account")
 )
 
 type Storage struct {
@@ -108,4 +112,56 @@ func (s *Storage) GetUserByEmail(ctx context.Context, email string) (*User, erro
 		return nil, err
 	}
 	return &user, nil
+}
+
+// --- Accounts ---
+
+type Account struct {
+	AccountNumber string    `db:"account_number"`
+	SortCode      string    `db:"sort_code"`
+	Name          string    `db:"name"`
+	AccountType   string    `db:"account_type"`
+	Balance       float64   `db:"balance"`
+	Currency      string    `db:"currency"`
+	UserID        string    `db:"user_id"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
+}
+
+type CreateAccountParams struct {
+	Name        string
+	AccountType string
+	UserID      string
+}
+
+func (s *Storage) GetAccountByNumber(ctx context.Context, accountNumber string) (*Account, error) {
+	var account Account
+	err := s.db.QueryRowxContext(ctx, `
+		SELECT account_number, sort_code, name, account_type, balance, currency, user_id, created_at, updated_at
+		FROM accounts WHERE account_number = ?`, accountNumber).StructScan(&account)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrAccountNotFound
+		}
+		return nil, err
+	}
+	return &account, nil
+}
+
+func (s *Storage) CreateAccount(ctx context.Context, params CreateAccountParams) (*Account, error) {
+	accountNumber := fmt.Sprintf("01%06d", rand.Intn(1_000_000))
+	now := time.Now().UTC()
+
+	var account Account
+	err := s.db.QueryRowxContext(ctx, `
+		INSERT INTO accounts (account_number, name, account_type, user_id, created_at, updated_at)
+		VALUES (?, ?, ?, ?, ?, ?)
+		RETURNING account_number, sort_code, name, account_type, balance, currency, user_id, created_at, updated_at`,
+		accountNumber, params.Name, params.AccountType, params.UserID, now, now,
+	).StructScan(&account)
+	if err != nil {
+		return nil, errors.Join(ErrFailedToCreateAccount, err)
+	}
+
+	return &account, nil
 }

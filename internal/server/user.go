@@ -88,7 +88,7 @@ func (s *Server) CreateUser(ctx context.Context, req *CreateUserRequest) (*UserR
 	})
 	if err != nil {
 		if errors.Is(err, storage.ErrDuplicateUser) {
-			return nil, huma.Error409Conflict("a user with this email already exists")
+			return nil, huma.Error400BadRequest("a user with this email already exists")
 		}
 		return nil, huma.Error500InternalServerError("failed to create user")
 	}

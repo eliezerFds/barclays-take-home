@@ -131,6 +131,12 @@ Beyond authentication, each protected endpoint enforces **ownership**. A user ca
 | `POST`   | `/v1/auth/login`        | No   | Authenticate a user    |
 | `GET`    | `/v1/users/{userId}`    | Yes  | Fetch a user by ID     |
 
+### Accounts
+
+| Method   | Path             | Auth | Description           |
+|----------|------------------|------|-----------------------|
+| `POST`   | `/v1/accounts`   | Yes  | Create a bank account |
+
 ### Decisions and Deviations from the Spec
 
 - **`password` added to `POST /v1/users`** — the original spec did not include a password field, but one is required for authentication to work. The OpenAPI spec has been updated accordingly with a minimum length of 8 characters.

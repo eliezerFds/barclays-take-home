@@ -71,7 +71,7 @@ func TestCreateUser(t *testing.T) {
 		{
 			name:           "duplicate email",
 			body:           validBody,
-			expectedStatus: http.StatusConflict,
+			expectedStatus: http.StatusBadRequest,
 		},
 		{
 			name:           "missing name",
