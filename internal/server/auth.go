@@ -15,6 +15,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var (
+	ErrMissingAuthContext = errors.New("failed to get authenticated user ID")
+)
+
 type contextKey string
 
 const authenticatedUserIDKey contextKey = "authenticatedUserID"
@@ -99,19 +103,25 @@ func jwtMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		authHeader := r.Header.Get("Authorization")
 		if !strings.HasPrefix(authHeader, "Bearer ") {
-			http.Error(w, `{"message":"access token is missing or invalid"}`, http.StatusUnauthorized)
+			writeUnauthorized(w)
 			return
 		}
 
 		userID, err := parseToken(strings.TrimPrefix(authHeader, "Bearer "))
 		if err != nil {
-			http.Error(w, `{"message":"access token is missing or invalid"}`, http.StatusUnauthorized)
+			writeUnauthorized(w)
 			return
 		}
 
 		ctx := context.WithValue(r.Context(), authenticatedUserIDKey, userID)
 		next.ServeHTTP(w, r.WithContext(ctx))
 	})
+}
+
+func writeUnauthorized(w http.ResponseWriter) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusUnauthorized)
+	w.Write([]byte(`{"message":"access token is missing or invalid"}`)) //nolint:errcheck
 }
 
 // --- Password helpers ---
@@ -128,7 +138,10 @@ func checkPassword(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
-func getAuthenticatedUserID(ctx context.Context) string {
-	id := ctx.Value(authenticatedUserIDKey).(string)
-	return id
+func getAuthenticatedUserID(ctx context.Context) (string, error) {
+	id, ok := ctx.Value(authenticatedUserIDKey).(string)
+	if !ok || id == "" {
+		return "", ErrMissingAuthContext
+	}
+	return id, nil
 }

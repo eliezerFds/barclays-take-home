@@ -88,7 +88,7 @@ func (s *Server) CreateUser(ctx context.Context, req *CreateUserRequest) (*UserR
 	})
 	if err != nil {
 		if errors.Is(err, storage.ErrDuplicateUser) {
-			return nil, huma.Error409Conflict("a user with this email already exists")
+			return nil, huma.Error400BadRequest("a user with this email already exists")
 		}
 		return nil, huma.Error500InternalServerError("failed to create user")
 	}
@@ -105,7 +105,11 @@ func (s *Server) FetchUser(ctx context.Context, req *FetchUserRequest) (*UserRes
 		return nil, huma.Error500InternalServerError("failed to fetch user")
 	}
 
-	if getAuthenticatedUserID(ctx) != user.ID {
+	callerID, err := getAuthenticatedUserID(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if callerID != user.ID {
 		return nil, huma.Error403Forbidden("you are not allowed to access this user")
 	}
 

@@ -39,7 +39,11 @@ func main() {
 
 	port := 8080
 	if p := os.Getenv("SERVER_PORT"); p != "" {
-		port, _ = strconv.Atoi(p)
+		parsed, err := strconv.Atoi(p)
+		if err != nil {
+			log.Fatalf("invalid SERVER_PORT %q: %v", p, err)
+		}
+		port = parsed
 	}
 	srv.Start(port)
 }
