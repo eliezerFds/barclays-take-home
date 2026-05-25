@@ -20,6 +20,10 @@ var (
 
 	ErrAccountNotFound       = errors.New("account not found")
 	ErrFailedToCreateAccount = errors.New("failed to create account")
+
+	ErrTransactionNotFound       = errors.New("transaction not found")
+	ErrFailedToCreateTransaction = errors.New("failed to create transaction")
+	ErrInsufficientFunds         = errors.New("insufficient funds")
 )
 
 type Storage struct {
@@ -121,7 +125,7 @@ type Account struct {
 	SortCode      string    `db:"sort_code"`
 	Name          string    `db:"name"`
 	AccountType   string    `db:"account_type"`
-	Balance       float64   `db:"balance"`
+	Balance       int64     `db:"balance"`
 	Currency      string    `db:"currency"`
 	UserID        string    `db:"user_id"`
 	CreatedAt     time.Time `db:"created_at"`
@@ -148,20 +152,113 @@ func (s *Storage) GetAccountByNumber(ctx context.Context, accountNumber string) 
 	return &account, nil
 }
 
-func (s *Storage) CreateAccount(ctx context.Context, params CreateAccountParams) (*Account, error) {
-	accountNumber := fmt.Sprintf("01%06d", rand.Intn(1_000_000))
-	now := time.Now().UTC()
+// --- Transactions ---
 
-	var account Account
-	err := s.db.QueryRowxContext(ctx, `
-		INSERT INTO accounts (account_number, name, account_type, user_id, created_at, updated_at)
-		VALUES (?, ?, ?, ?, ?, ?)
-		RETURNING account_number, sort_code, name, account_type, balance, currency, user_id, created_at, updated_at`,
-		accountNumber, params.Name, params.AccountType, params.UserID, now, now,
-	).StructScan(&account)
+type Transaction struct {
+	ID            string    `db:"id"`
+	AccountNumber string    `db:"account_number"`
+	Amount        int64     `db:"amount"`
+	Currency      string    `db:"currency"`
+	Type          string    `db:"type"`
+	Reference     string    `db:"reference"`
+	CreatedAt     time.Time `db:"created_at"`
+}
+
+type CreateTransactionParams struct {
+	AccountNumber string
+	Amount        int64
+	Currency      string
+	Type          string
+	Reference     string
+}
+
+func (s *Storage) CreateTransaction(ctx context.Context, params CreateTransactionParams) (*Transaction, error) {
+	tx, err := s.db.BeginTxx(ctx, nil)
 	if err != nil {
-		return nil, errors.Join(ErrFailedToCreateAccount, err)
+		return nil, errors.Join(ErrFailedToCreateTransaction, err)
+	}
+	defer tx.Rollback()
+
+	var balance int64
+	if err = tx.QueryRowContext(ctx, `SELECT balance FROM accounts WHERE account_number = ?`, params.AccountNumber).Scan(&balance); err != nil {
+		return nil, errors.Join(ErrFailedToCreateTransaction, err)
 	}
 
-	return &account, nil
+	if params.Type == "withdrawal" && balance < params.Amount {
+		return nil, ErrInsufficientFunds
+	}
+
+	var newBalance int64
+	if params.Type == "deposit" {
+		newBalance = balance + params.Amount
+	} else {
+		newBalance = balance - params.Amount
+	}
+
+	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET balance = ?, updated_at = ? WHERE account_number = ?`,
+		newBalance, time.Now().UTC(), params.AccountNumber); err != nil {
+		return nil, errors.Join(ErrFailedToCreateTransaction, err)
+	}
+
+	id, err := uuid.NewV7()
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate transaction id: %w", err)
+	}
+	transactionID := "tan-" + strings.ReplaceAll(id.String(), "-", "")
+	now := time.Now().UTC()
+
+	var transaction Transaction
+	err = tx.QueryRowxContext(ctx, `
+		INSERT INTO transactions (id, account_number, amount, currency, type, reference, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?)
+		RETURNING id, account_number, amount, currency, type, reference, created_at`,
+		transactionID, params.AccountNumber, params.Amount, params.Currency, params.Type, params.Reference, now,
+	).StructScan(&transaction)
+	if err != nil {
+		return nil, errors.Join(ErrFailedToCreateTransaction, err)
+	}
+
+	if err = tx.Commit(); err != nil {
+		return nil, errors.Join(ErrFailedToCreateTransaction, err)
+	}
+
+	return &transaction, nil
+}
+
+func (s *Storage) GetTransactionByID(ctx context.Context, accountNumber, transactionID string) (*Transaction, error) {
+	var transaction Transaction
+	err := s.db.QueryRowxContext(ctx, `
+		SELECT id, account_number, amount, currency, type, reference, created_at
+		FROM transactions WHERE id = ? AND account_number = ?`, transactionID, accountNumber).StructScan(&transaction)
+	if err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return nil, ErrTransactionNotFound
+		}
+		return nil, err
+	}
+	return &transaction, nil
+}
+
+func (s *Storage) CreateAccount(ctx context.Context, params CreateAccountParams) (*Account, error) {
+	now := time.Now().UTC()
+
+	for range 10 {
+		accountNumber := fmt.Sprintf("01%06d", rand.Intn(1_000_000))
+
+		var account Account
+		err := s.db.QueryRowxContext(ctx, `
+			INSERT INTO accounts (account_number, name, account_type, user_id, created_at, updated_at)
+			VALUES (?, ?, ?, ?, ?, ?)
+			RETURNING account_number, sort_code, name, account_type, balance, currency, user_id, created_at, updated_at`,
+			accountNumber, params.Name, params.AccountType, params.UserID, now, now,
+		).StructScan(&account)
+		if err == nil {
+			return &account, nil
+		}
+		if !strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			return nil, errors.Join(ErrFailedToCreateAccount, err)
+		}
+	}
+
+	return nil, ErrFailedToCreateAccount
 }

@@ -5,7 +5,7 @@ CREATE TABLE accounts (
     sort_code        TEXT NOT NULL DEFAULT '10-10-10',
     name             TEXT NOT NULL,
     account_type     TEXT NOT NULL DEFAULT 'personal',
-    balance          REAL NOT NULL DEFAULT 0.00,
+    balance          INTEGER NOT NULL DEFAULT 0 CHECK (balance >= 0),
     currency         TEXT NOT NULL DEFAULT 'GBP',
     user_id          TEXT NOT NULL,
     created_at       TIMESTAMP NOT NULL,

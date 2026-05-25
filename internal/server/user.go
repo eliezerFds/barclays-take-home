@@ -105,7 +105,11 @@ func (s *Server) FetchUser(ctx context.Context, req *FetchUserRequest) (*UserRes
 		return nil, huma.Error500InternalServerError("failed to fetch user")
 	}
 
-	if getAuthenticatedUserID(ctx) != user.ID {
+	callerID, err := getAuthenticatedUserID(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if callerID != user.ID {
 		return nil, huma.Error403Forbidden("you are not allowed to access this user")
 	}
 

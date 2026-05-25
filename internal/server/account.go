@@ -39,7 +39,7 @@ func toAccountResponse(a *storage.Account) *AccountResponse {
 			SortCode:         a.SortCode,
 			Name:             a.Name,
 			AccountType:      a.AccountType,
-			Balance:          a.Balance,
+			Balance:          float64(a.Balance) / 100,
 			Currency:         a.Currency,
 			CreatedTimestamp: a.CreatedAt.Format("2006-01-02T15:04:05Z"),
 			UpdatedTimestamp: a.UpdatedAt.Format("2006-01-02T15:04:05Z"),
@@ -60,7 +60,11 @@ func (s *Server) FetchAccount(ctx context.Context, req *FetchAccountRequest) (*A
 		return nil, huma.Error500InternalServerError("failed to fetch account")
 	}
 
-	if getAuthenticatedUserID(ctx) != account.UserID {
+	callerID, err := getAuthenticatedUserID(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal error")
+	}
+	if callerID != account.UserID {
 		return nil, huma.Error403Forbidden("you are not allowed to access this account")
 	}
 
@@ -68,7 +72,10 @@ func (s *Server) FetchAccount(ctx context.Context, req *FetchAccountRequest) (*A
 }
 
 func (s *Server) CreateAccount(ctx context.Context, req *CreateAccountRequest) (*AccountResponse, error) {
-	userID := getAuthenticatedUserID(ctx)
+	userID, err := getAuthenticatedUserID(ctx)
+	if err != nil {
+		return nil, huma.Error500InternalServerError("internal error")
+	}
 
 	account, err := s.repository.CreateAccount(ctx, storage.CreateAccountParams{
 		Name:        req.Body.Name,

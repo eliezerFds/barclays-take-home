@@ -15,6 +15,10 @@ import (
 	"golang.org/x/crypto/bcrypt"
 )
 
+var (
+	ErrMissingAuthContext = errors.New("failed to get authenticated user ID")
+)
+
 type contextKey string
 
 const authenticatedUserIDKey contextKey = "authenticatedUserID"
@@ -134,7 +138,10 @@ func checkPassword(hash, password string) bool {
 	return bcrypt.CompareHashAndPassword([]byte(hash), []byte(password)) == nil
 }
 
-func getAuthenticatedUserID(ctx context.Context) string {
-	id := ctx.Value(authenticatedUserIDKey).(string)
-	return id
+func getAuthenticatedUserID(ctx context.Context) (string, error) {
+	id, ok := ctx.Value(authenticatedUserIDKey).(string)
+	if !ok || id == "" {
+		return "", ErrMissingAuthContext
+	}
+	return id, nil
 }
