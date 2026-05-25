@@ -27,8 +27,8 @@ barclays/
     │   ├── server.go                # Server setup, route registration, auth middleware
     │   ├── auth.go                  # Login handler, JWT helpers, password helpers
     │   ├── user.go                  # User handlers and request/response types
-    │   ├── account.go               # Account handlers (to be implemented)
-    │   └── transaction.go           # Transaction handlers (to be implemented)
+    │   ├── account.go               # Account handlers and request/response types
+    │   └── transaction.go           # Transaction handlers and request/response types
     └── storage/
         └── storage.go               # Database layer — all SQL queries and types
 ```
@@ -133,9 +133,143 @@ Beyond authentication, each protected endpoint enforces **ownership**. A user ca
 
 ### Accounts
 
-| Method   | Path             | Auth | Description           |
-|----------|------------------|------|-----------------------|
-| `POST`   | `/v1/accounts`   | Yes  | Create a bank account |
+| Method   | Path                                              | Auth | Description              |
+|----------|---------------------------------------------------|------|--------------------------|
+| `POST`   | `/v1/accounts`                                    | Yes  | Create a bank account    |
+| `GET`    | `/v1/accounts/{accountNumber}`                    | Yes  | Fetch a bank account     |
+
+### Transactions
+
+| Method   | Path                                                          | Auth | Description          |
+|----------|---------------------------------------------------------------|------|----------------------|
+| `POST`   | `/v1/accounts/{accountNumber}/transactions`                   | Yes  | Create a transaction |
+| `GET`    | `/v1/accounts/{accountNumber}/transactions/{transactionId}`   | Yes  | Fetch a transaction  |
+
+---
+
+## Manual Testing
+
+Start the server first:
+
+```bash
+go run main.go
+```
+
+The examples below chain together — each step uses values returned by the previous one. Store them in shell variables as shown to make copying easier.
+
+### 1. Create a user
+
+```bash
+curl -s -X POST http://localhost:8080/v1/users \
+  -H "Content-Type: application/json" \
+  -d '{
+    "name": "John Doe",
+    "address": {
+      "line1": "123 High Street",
+      "town": "London",
+      "county": "Greater London",
+      "postcode": "EC1A 1BB"
+    },
+    "phoneNumber": "+447911123456",
+    "email": "john@example.com",
+    "password": "password123"
+  }' | jq
+```
+
+Note the `id` field in the response — you will need it for the fetch user request.
+
+### 2. Login
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:8080/v1/auth/login \
+  -H "Content-Type: application/json" \
+  -d '{"email": "john@example.com", "password": "password123"}' \
+  | jq -r '.token')
+
+echo $TOKEN
+```
+
+All subsequent requests use `$TOKEN` in the `Authorization` header.
+
+### 3. Fetch the user
+
+Replace `usr-abc123` with the `id` returned in step 1.
+
+```bash
+curl -s http://localhost:8080/v1/users/usr-abc123 \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+### 4. Create a bank account
+
+```bash
+ACCOUNT=$(curl -s -X POST http://localhost:8080/v1/accounts \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"name": "Personal Account", "accountType": "personal"}' | jq)
+
+echo $ACCOUNT
+
+ACCOUNT_NUMBER=$(echo $ACCOUNT | jq -r '.accountNumber')
+echo $ACCOUNT_NUMBER
+```
+
+### 5. Fetch the bank account
+
+```bash
+curl -s http://localhost:8080/v1/accounts/$ACCOUNT_NUMBER \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
+
+### 6. Deposit money
+
+```bash
+curl -s -X POST http://localhost:8080/v1/accounts/$ACCOUNT_NUMBER/transactions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"amount": 500.00, "currency": "GBP", "type": "deposit"}' | jq
+```
+
+### 7. Deposit with a reference
+
+```bash
+curl -s -X POST http://localhost:8080/v1/accounts/$ACCOUNT_NUMBER/transactions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"amount": 250.00, "currency": "GBP", "type": "deposit", "reference": "salary"}' | jq
+```
+
+### 8. Withdraw money
+
+```bash
+TX=$(curl -s -X POST http://localhost:8080/v1/accounts/$ACCOUNT_NUMBER/transactions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"amount": 100.00, "currency": "GBP", "type": "withdrawal"}' | jq)
+
+echo $TX
+
+TX_ID=$(echo $TX | jq -r '.id')
+echo $TX_ID
+```
+
+### 9. Attempt a withdrawal with insufficient funds
+
+```bash
+curl -s -X POST http://localhost:8080/v1/accounts/$ACCOUNT_NUMBER/transactions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $TOKEN" \
+  -d '{"amount": 9999.99, "currency": "GBP", "type": "withdrawal"}' | jq
+```
+
+Expect a `422 Unprocessable Entity` response.
+
+### 10. Fetch a transaction
+
+```bash
+curl -s http://localhost:8080/v1/accounts/$ACCOUNT_NUMBER/transactions/$TX_ID \
+  -H "Authorization: Bearer $TOKEN" | jq
+```
 
 ### Decisions and Deviations from the Spec
 

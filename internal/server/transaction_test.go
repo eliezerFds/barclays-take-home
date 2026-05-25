@@ -24,7 +24,9 @@ func createTransaction(t *testing.T, ts *httptest.Server, token, accountNumber, 
 	}
 	defer resp.Body.Close()
 	var result TransactionResponseBody
-	json.NewDecoder(resp.Body).Decode(&result)
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		t.Fatalf("createTransaction: failed to decode response body: %v", err)
+	}
 	return resp.StatusCode, result
 }
 
@@ -178,6 +180,55 @@ func TestCreateTransaction(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+func TestTransactionUpdatesBalance(t *testing.T) {
+	ts := newTestServer(t)
+	defer ts.Close()
+	client := ts.Client()
+
+	_, token := createAndLogin(t, ts, "balance-check@example.com")
+	accountNumber := createAccount(t, ts, token)
+
+	getBalance := func() float64 {
+		req, _ := http.NewRequest(http.MethodGet, ts.URL+"/v1/accounts/"+accountNumber, nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		resp, err := client.Do(req)
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer resp.Body.Close()
+		var body AccountResponseBody
+		if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+			t.Fatal(err)
+		}
+		return body.Balance
+	}
+
+	if bal := getBalance(); bal != 0 {
+		t.Fatalf("expected initial balance 0, got %v", bal)
+	}
+
+	if code, _ := createTransaction(t, ts, token, accountNumber, `{"amount":100.00,"currency":"GBP","type":"deposit"}`); code != http.StatusCreated {
+		t.Fatalf("deposit failed: %d", code)
+	}
+	if bal := getBalance(); bal != 100.00 {
+		t.Errorf("after £100 deposit: expected balance 100.00, got %v", bal)
+	}
+
+	if code, _ := createTransaction(t, ts, token, accountNumber, `{"amount":40.50,"currency":"GBP","type":"withdrawal"}`); code != http.StatusCreated {
+		t.Fatalf("withdrawal failed: %d", code)
+	}
+	if bal := getBalance(); bal != 59.50 {
+		t.Errorf("after £40.50 withdrawal: expected balance 59.50, got %v", bal)
+	}
+
+	if code, _ := createTransaction(t, ts, token, accountNumber, `{"amount":59.50,"currency":"GBP","type":"withdrawal"}`); code != http.StatusCreated {
+		t.Fatalf("exact withdrawal failed: %d", code)
+	}
+	if bal := getBalance(); bal != 0 {
+		t.Errorf("after withdrawing remaining balance: expected balance 0, got %v", bal)
 	}
 }
 

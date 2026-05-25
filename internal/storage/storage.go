@@ -179,25 +179,30 @@ func (s *Storage) CreateTransaction(ctx context.Context, params CreateTransactio
 	}
 	defer tx.Rollback()
 
-	var balance int64
-	if err = tx.QueryRowContext(ctx, `SELECT balance FROM accounts WHERE account_number = ?`, params.AccountNumber).Scan(&balance); err != nil {
-		return nil, errors.Join(ErrFailedToCreateTransaction, err)
-	}
-
-	if params.Type == "withdrawal" && balance < params.Amount {
-		return nil, ErrInsufficientFunds
-	}
-
-	var newBalance int64
+	now := time.Now().UTC()
+	var res sql.Result
 	if params.Type == "deposit" {
-		newBalance = balance + params.Amount
+		res, err = tx.ExecContext(ctx,
+			`UPDATE accounts SET balance = balance + ?, updated_at = ? WHERE account_number = ?`,
+			params.Amount, now, params.AccountNumber)
 	} else {
-		newBalance = balance - params.Amount
+		// AND balance >= ? makes the check and update atomic — no separate SELECT needed.
+		res, err = tx.ExecContext(ctx,
+			`UPDATE accounts SET balance = balance - ?, updated_at = ? WHERE account_number = ? AND balance >= ?`,
+			params.Amount, now, params.AccountNumber, params.Amount)
 	}
-
-	if _, err = tx.ExecContext(ctx, `UPDATE accounts SET balance = ?, updated_at = ? WHERE account_number = ?`,
-		newBalance, time.Now().UTC(), params.AccountNumber); err != nil {
+	if err != nil {
 		return nil, errors.Join(ErrFailedToCreateTransaction, err)
+	}
+	rows, err := res.RowsAffected()
+	if err != nil {
+		return nil, errors.Join(ErrFailedToCreateTransaction, err)
+	}
+	if rows == 0 {
+		if params.Type == "withdrawal" {
+			return nil, ErrInsufficientFunds
+		}
+		return nil, ErrAccountNotFound
 	}
 
 	id, err := uuid.NewV7()
@@ -205,7 +210,6 @@ func (s *Storage) CreateTransaction(ctx context.Context, params CreateTransactio
 		return nil, fmt.Errorf("failed to generate transaction id: %w", err)
 	}
 	transactionID := "tan-" + strings.ReplaceAll(id.String(), "-", "")
-	now := time.Now().UTC()
 
 	var transaction Transaction
 	err = tx.QueryRowxContext(ctx, `

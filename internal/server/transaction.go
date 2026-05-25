@@ -6,14 +6,11 @@ import (
 	"math"
 
 	"barclays/internal/storage"
+
 	"github.com/danielgtaylor/huma/v2"
 )
 
 // --- Request / Response types ---
-
-type TransactionAccountPath struct {
-	AccountNumber string `path:"accountNumber" pattern:"^01\\d{6}$" doc:"Account number"`
-}
 
 type CreateTransactionRequest struct {
 	AccountNumber string `path:"accountNumber" pattern:"^01\\d{6}$" doc:"Account number"`
@@ -88,7 +85,6 @@ func (s *Server) CreateTransaction(ctx context.Context, req *CreateTransactionRe
 	})
 	if err != nil {
 		if errors.Is(err, storage.ErrInsufficientFunds) {
-			// Return ErrorModel directly to bypass the global 422→400 remap (which exists for validation errors).
 			return nil, &huma.ErrorModel{Status: 422, Title: "Unprocessable Entity", Detail: "insufficient funds"}
 		}
 		return nil, huma.Error500InternalServerError("failed to create transaction")
