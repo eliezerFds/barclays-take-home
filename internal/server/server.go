@@ -31,8 +31,8 @@ func (s *Server) Start(port int) {
 // publicRoutes lists routes that do not require a JWT token.
 // Key: path, value: HTTP method.
 var publicRoutes = map[string]string{
-	"/v1/users":       http.MethodPost,
-	"/v1/auth/login":  http.MethodPost,
+	"/v1/users":      http.MethodPost,
+	"/v1/auth/login": http.MethodPost,
 }
 
 func New(deps Dependencies) *Server {
@@ -41,7 +41,8 @@ func New(deps Dependencies) *Server {
 
 	// Huma returns 422 for validation errors by default; the spec requires 400.
 	huma.NewError = func(status int, msg string, errs ...error) huma.StatusError {
-		if status == http.StatusUnprocessableEntity {
+		// Remap Huma's 422 error to 400 to fit spec
+		if status == http.StatusUnprocessableEntity && len(errs) > 0 {
 			status = http.StatusBadRequest
 		}
 		out := &huma.ErrorModel{Status: status, Title: http.StatusText(status), Detail: msg}

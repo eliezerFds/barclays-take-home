@@ -76,16 +76,21 @@ func (s *Server) CreateTransaction(ctx context.Context, req *CreateTransactionRe
 		return nil, huma.Error403Forbidden("you are not allowed to access this account")
 	}
 
+	amountInPence := int64(math.Round(req.Body.Amount * 100))
+	if amountInPence == 0 {
+		return nil, huma.Error400BadRequest("amount must be greater than zero")
+	}
+
 	transaction, err := s.repository.CreateTransaction(ctx, storage.CreateTransactionParams{
 		AccountNumber: req.AccountNumber,
-		Amount:        int64(math.Round(req.Body.Amount * 100)),
+		Amount:        amountInPence,
 		Currency:      req.Body.Currency,
 		Type:          req.Body.Type,
 		Reference:     req.Body.Reference,
 	})
 	if err != nil {
 		if errors.Is(err, storage.ErrInsufficientFunds) {
-			return nil, huma.Error409Conflict("insufficient funds")
+			return nil, huma.Error422UnprocessableEntity("Insufficient funds to process transaction")
 		}
 		return nil, huma.Error500InternalServerError("failed to create transaction")
 	}

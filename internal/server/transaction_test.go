@@ -130,6 +130,13 @@ func TestCreateTransaction(t *testing.T) {
 			expectedStatus: http.StatusBadRequest,
 		},
 		{
+			name:           "zero amount",
+			url:            txURL,
+			body:           `{"amount":0,"currency":"GBP","type":"deposit"}`,
+			token:          token,
+			expectedStatus: http.StatusBadRequest,
+		},
+		{
 			name:           "account not found",
 			url:            fmt.Sprintf("%s/v1/accounts/01000000/transactions", ts.URL),
 			body:           `{"amount":10.00,"currency":"GBP","type":"deposit"}`,
