@@ -85,7 +85,7 @@ func (s *Server) CreateTransaction(ctx context.Context, req *CreateTransactionRe
 	})
 	if err != nil {
 		if errors.Is(err, storage.ErrInsufficientFunds) {
-			return nil, &huma.ErrorModel{Status: 422, Title: "Unprocessable Entity", Detail: "insufficient funds"}
+			return nil, huma.Error409Conflict("insufficient funds")
 		}
 		return nil, huma.Error500InternalServerError("failed to create transaction")
 	}
